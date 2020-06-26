@@ -9,14 +9,15 @@
 #include <map>
 #include <mutex>
 #include <shared_mutex>
-#include <atomic>
 #include <vector>
 class Classifica {
     std::mutex m;
     std::condition_variable cv;
     std::map<std::string,int> concorrenteToPunteggio;
     bool cambiamento;
-    
+    bool isFlush = false;
+    std::condition_variable cvFlush;
+    int attesa{0};
 
 public:
     Classifica(): cambiamento(false){}
@@ -34,26 +35,27 @@ public:
                 cv.notify_all();
             }
     }
-    std::atomic<int> attesa{0};
     void AttendiCambiamento(){
-
             std::unique_lock lk(m);
-            attesa.fetch_add(1);
-
-            cv.wait(lk, [this]() { return cambiamento; });
-
-            attesa.fetch_sub(1);
-            std::cout << "cambiamento " << attesa <<"\n";
-            if (attesa.load() == 0) {
-                std::cout << "ultimo ";
-                cambiamento = false;
+            while(isFlush) cvFlush.wait(lk);
+            attesa++;
+            std::cout << "waiting..." << std::endl;
+            while(!isFlush &&  !cambiamento ) cv.wait(lk);
+            std::cout << "attesa terminata" << std::endl;
+            if(!isFlush) {
+                isFlush = true;
+                cv.notify_all();
             }
-
+            std::cout << "cambiamento " << attesa <<"\n";
+            attesa--;
+            if(attesa == 0){
+                isFlush = false;
+                cambiamento = false;
+                cvFlush.notify_all();
+            }
     }
-
     std::map<std::string,int> getClassifica(){
         std::lock_guard lk(m);
         return concorrenteToPunteggio;
     }
-
 };
